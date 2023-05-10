@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
 import pytz
+import os
 from datetime import datetime
 import pandas_ta as ta
 from tensorflow import keras
@@ -16,6 +17,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, concatenate, Add
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 
 # Load the stock market data from Yahoo Finance
@@ -104,7 +106,7 @@ def prepare_data(data, window_size):
     return x, y
 
 
-def prepare_data_3x(data, window_size):
+def prepare_data_3d(data, window_size):
     x1, x2, x3 = ([] for r in range(3))
     y = []
     for i in range(window_size * 3, len(data) - 1):
@@ -122,6 +124,21 @@ def prepare_data_3x(data, window_size):
     return x1, x2, x3, y
 
 
+def train_test_split_3d(x1, x2, x3, y):
+    (x1_train, x1_test, y1_train, y1_test) = train_test_split(x1, y, test_size=0.2, random_state=69)
+    (x2_train, x2_test, y1_train, y1_test) = train_test_split(x2, y, test_size=0.2, random_state=69)
+    (x3_train, x3_test, y1_train, y1_test) = train_test_split(x3, y, test_size=0.2, random_state=69)
+    return x1_train, x1_test, x2_train, x2_test, x3_train, x3_test, y1_train, y1_test
+
+
+def reform_transform(x, scaler):
+    num_instances, num_time_steps, num_features = x.shape
+    x = np.reshape(x, newshape=(-1, num_features))
+    x = scaler.transform(x)
+    x = np.reshape(x, newshape=(num_instances, num_time_steps, num_features))
+    return x
+
+
 def minmaxscale_3d(x1, x2, y1, y2):
     scaler = MinMaxScaler()
     # Transform x1
@@ -130,44 +147,60 @@ def minmaxscale_3d(x1, x2, y1, y2):
     x1 = scaler.fit_transform(x1)
     x1 = np.reshape(x1, newshape=(num_instances, num_time_steps, num_features))
     # Transform x2
-    num_instances, num_time_steps, num_features = x2.shape
-    x2 = np.reshape(x2, newshape=(-1, num_features))
-    x2 = scaler.transform(x2)
-    x2 = np.reshape(x2, newshape=(num_instances, num_time_steps, num_features))
+    x2 = reform_transform(x2, scaler)
     # Transform y1, y2
     y1 = scaler.transform(y1)
     y2 = scaler.transform(y2)
     return x1, x2, y1, y2, scaler
 
 
-def define_lstm_cnn_model(input_shape):
+def minmaxscale_4d(x11, x12, x21, x22, x31, x32, y1, y2):
+    scaler = MinMaxScaler()
+    # Transform merged inputs x_train
+    num_instances, num_time_steps, num_features = x31.shape
+    x31 = np.reshape(x31, newshape=(-1, num_features))
+    x31 = scaler.fit_transform(x31)
+    x31 = np.reshape(x31, newshape=(num_instances, num_time_steps, num_features))
+    x32 = reform_transform(x32, scaler)
+    x21 = reform_transform(x21, scaler)
+    x22 = reform_transform(x22, scaler)
+    x11 = reform_transform(x11, scaler)
+    x12 = reform_transform(x12, scaler)
+    # Transform y1, y2
+    y1 = scaler.transform(y1)
+    y2 = scaler.transform(y2)
+    return x11, x12, x21, x22, x31, x32, y1, y2, scaler
+
+
+def define_lstm_cnn_model(x_train):
     # Define the CNN model
     cnn_model = tf.keras.Sequential([
-        layers.Conv1D(32, kernel_size=1, activation='sigmoid', padding="same", input_shape=input_shape),
+        layers.Conv1D(32, kernel_size=1, activation='sigmoid', padding="same",
+                      input_shape=(x_train.shape[1], x_train.shape[2])),
         layers.MaxPooling1D(pool_size=1, padding="same"),
     ])
     # Define the bi-lstm model
     lstm_model = tf.keras.Sequential([
         layers.Bidirectional(layers.LSTM(64, activation='tanh')),
-        layers.Dense(input_shape[1]),
+        layers.Dense(x_train.shape[2]),
     ])
     # Define the combined model
-    inputs = layers.Input(shape=input_shape)
+    inputs = layers.Input(shape=(x_train.shape[1], x_train.shape[2]))
     x = cnn_model(inputs)
     outputs = lstm_model(x)
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     return model
 
 
-def define_lstm_dnn_model(input_shape):
+def define_lstm_dnn_model(x_train):
     model = Sequential()
-    model.add(LSTM(64, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(64, return_sequences=True, input_shape=(x_train.shape[1], x_train.shape[2])))
     model.add(Dropout(0.2))
     model.add(LSTM(64, return_sequences=False))
     model.add(Dropout(0.2))
     model.add(Dense(25))
     model.add(Dropout(0.2))
-    model.add(Dense(input_shape[1]))
+    model.add(Dense(x_train.shape[2]))
     return model
 
 
@@ -194,6 +227,28 @@ def define_lstm_cat_model(x1_train, x2_train, x3_train):
     return model
 
 
+def train_save_model(model, x_train, y_train, x_test, y_test, epoch, flg_new_model, stock_symbol, dev_env):
+    if dev_env == "PC":
+        save_path = f'/PyCharm/2023.04_StockPredict_LSTM/prt_scr/{stock_symbol}'
+    else:
+        save_path = f'/Git/StockPredict_LSTM/prt_scr/{stock_symbol}'
+    if flg_new_model == 1:
+        # Train the model
+        model.compile(optimizer='adam', loss='mse')
+        model.fit(x_train, y_train, epochs=epoch, batch_size=32, validation_data=(x_test, y_test), verbose=2)
+        # Save the model
+        today = datetime.now()
+        # Define path to save model
+        if not os.path.exists(save_path):
+            # If it doesn't exist, create the directory
+            os.makedirs(save_path)
+        model.save(os.path.join(save_path, f'{today.year}.{today.month}.{today.day}_{stock_symbol}.h5'))
+    else:
+        model = max(os.listdir(save_path), key=os.path.getctime)
+        model = tf.keras.models.load_model(os.path.join(save_path, model))
+    return model
+
+
 def get_past_prediction(model, data, pred_window, dt_window, scaler):
     last_window = np.array(data[-pred_window - dt_window:-pred_window])
     last_window = scaler.transform(last_window)
@@ -210,7 +265,7 @@ def get_past_prediction(model, data, pred_window, dt_window, scaler):
     return prediction
 
 
-def get_past_prediction_3x(model, data, pred_window, scaler):
+def get_past_prediction_3d(model, data, pred_window, scaler):
     last_window_p1 = np.array(data[-pred_window * 2:-pred_window])
     last_window_p2 = np.array(data[-pred_window * 3:-pred_window])
     last_window_p3 = np.array(data[-pred_window * 4:-pred_window])
@@ -248,7 +303,7 @@ def get_future_prediction(model, data, pred_window, dt_window, scaler):
     return prediction
 
 
-def get_future_prediction_3x(model, data, pred_window, scaler):
+def get_future_prediction_3d(model, data, pred_window, scaler):
     last_window_f1 = np.array(data[-pred_window:])
     last_window_f2 = np.array(data[-pred_window * 2:])
     last_window_f3 = np.array(data[-pred_window * 3:])
@@ -277,19 +332,32 @@ def plot_prediction(stock_symbol, raw_data, predict_window, predicted_p, predict
     ax.plot(np.arange(1, predict_window + 1), predicted_f[:, 0], color='orange', label='Predicted Future Closing')
     ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data[['Close']][-predict_window * 2:], color='blue',
             label='Actual Closing')
-    ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data['EMA10'][-predict_window*2:], color='green', label='EMA10')
-    ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data['SMA20'][-predict_window*2:], color='cyan', label='SMA20')
+    ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data['EMA10'][-predict_window * 2:], color='green',
+            label='EMA10')
+    ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data['SMA20'][-predict_window * 2:], color='cyan', label='SMA20')
     if earning_delta <= predict_window:
         plt.axvline(x=earning_delta, color='red')
     ax2 = ax.twinx()
     ax2.set_ylim([0, 100])
     ax2.set_zorder(-100)
     ax.set_facecolor('none')
-    ax2.scatter(np.arange(-predict_window * 2 + 1, 1), raw_data[['RSI14']][-predict_window*2:], color='magenta', marker='x',
+    ax2.scatter(np.arange(-predict_window * 2 + 1, 1), raw_data[['RSI14']][-predict_window * 2:], color='magenta',
+                marker='x',
                 s=10, label='RSI14')
     plt.title(f"Predicted Market Price for {stock_symbol} in {predict_window} days")
     ax.legend()
     ax2.legend()
     plt.grid()
-    plt.show()
 
+
+def save_graph(today, stock_symbol, flg_lstm_algo, dev_env):
+    filename = f'{today.year}.{today.month}.{today.day}_{stock_symbol}_{flg_lstm_algo}.png'
+    if dev_env == "PC":
+        folder = f'/PyCharm/2023.04_StockPredict_LSTM/prt_scr/{stock_symbol}'
+    else:
+        folder = f'/Git/StockPredict_LSTM/prt_scr/{stock_symbol}'
+    if not os.path.exists(folder):
+        # If it doesn't exist, create the directory
+        os.makedirs(folder)
+    plt.savefig(folder + "/" + filename)
+    plt.show()
