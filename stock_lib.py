@@ -229,9 +229,9 @@ def define_lstm_cat_model(x1_train, x2_train, x3_train):
 
 def train_save_model(model, x_train, y_train, x_test, y_test, epoch, flg_new_model, stock_symbol, dev_env):
     if dev_env == "PC":
-        save_path = f'/PyCharm/2023.04_StockPredict_LSTM/prt_scr/{stock_symbol}'
+        save_path = f'/PyCharm/2023.04_StockPredict_LSTM/model/{stock_symbol}'
     else:
-        save_path = f'/Git/StockPredict_LSTM/prt_scr/{stock_symbol}'
+        save_path = f'/Git/StockPredict_LSTM/model/{stock_symbol}'
     if flg_new_model == 1:
         # Train the model
         model.compile(optimizer='adam', loss='mse')
@@ -244,8 +244,8 @@ def train_save_model(model, x_train, y_train, x_test, y_test, epoch, flg_new_mod
             os.makedirs(save_path)
         model.save(os.path.join(save_path, f'{today.year}.{today.month}.{today.day}_{stock_symbol}.h5'))
     else:
-        model = max(os.listdir(save_path), key=os.path.getctime)
-        model = tf.keras.models.load_model(os.path.join(save_path, model))
+        model_path = max(os.listdir(save_path), key=os.path.getctime)
+        model = tf.keras.models.load_model(os.path.join(save_path, model_path))
     return model
 
 
