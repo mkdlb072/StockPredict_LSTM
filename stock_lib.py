@@ -327,9 +327,9 @@ def get_future_prediction_3d(model, data, pred_window, scaler):
 
 def plot_prediction(stock_symbol, raw_data, predict_window, predicted_p, predicted_f, earning_delta):
     fig, ax = plt.subplots()
-    ax.plot(np.arange(-predict_window + 1, predict_window + 1), predicted_p[:, 0], color='red',
+    ax.plot(np.arange(-predict_window + 1, predict_window + 1), predicted_p[:, 4], color='red',
             label='Predicted Past Closing')
-    ax.plot(np.arange(1, predict_window + 1), predicted_f[:, 0], color='orange', label='Predicted Future Closing')
+    ax.plot(np.arange(1, predict_window + 1), predicted_f[:, 4], color='orange', label='Predicted Future Closing')
     ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data[['Close']][-predict_window * 2:], color='blue',
             label='Actual Closing')
     ax.plot(np.arange(-predict_window * 2 + 1, 1), raw_data['EMA10'][-predict_window * 2:], color='green',
