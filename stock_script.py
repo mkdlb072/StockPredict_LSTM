@@ -69,11 +69,6 @@ elif flg_lstm_algo == 2:
     predicted_f = stock_lib.get_future_prediction(model, np_data, predict_window, data_window, sc)
     print(predicted_p[:, 0])
 
-# # Predict future stock values
-# predicted_p = stock_lib.get_past_prediction(model, np_data, predict_window, data_window, sc)
-# predicted_f = stock_lib.get_future_prediction(model, np_data, predict_window, data_window, sc)
-# print(predicted_p[:, 0])
-
 # Plot the results
 stock_lib.plot_prediction(stock_symbol, raw_data, predict_window, predicted_p, predicted_f, earning_delta)
 stock_lib.save_graph(end_date, stock_symbol, flg_lstm_algo, dev_env)
